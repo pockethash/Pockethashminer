@@ -1,0 +1,654 @@
+{
+  "adminFiles/$fileId": {
+    "type": "storage",
+    "description": "Admin-only file storage",
+    "rules": {
+      "read": "true",
+      "create": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2)",
+      "update": "false",
+      "delete": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2)"
+    }
+  },
+  "appFiles/$fileId": {
+    "type": "storage",
+    "description": "App user uploaded files",
+    "rules": {
+      "read": "true",
+      "create": "@user.address != null",
+      "update": "false",
+      "delete": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2)"
+    }
+  },
+  "commonQueries/$queryId": {
+    "description": "Read-only queries for wallet balances and swap quotes. Supports SOL/USDC/SPL token balance lookups, Jupiter swap quotes, and Meteora dynamic bonding curve quotes.",
+    "operationDetails": {
+      "read": "Anyone can use these queries: (1) Balance queries - check SOL, USDC, or any SPL token balance for any wallet address. (2) Jupiter swap quotes - get expected output amounts for token swaps via Jupiter aggregator. (3) Meteora swap quotes - get expected output amounts for Meteora dynamic bonding curve pools."
+    },
+    "onchain": false,
+    "fields": {},
+    "rules": {
+      "read": "true",
+      "create": "false",
+      "update": "false",
+      "delete": "false"
+    },
+    "queries": {
+      "solBalance": {
+        "description": "Get SOL balance for a wallet address in lamports (1 SOL = 1,000,000,000 lamports). Pass walletAddress as parameter.",
+        "returnType": "UInt",
+        "query": "@TokenPlugin.getBalance(@newData.walletAddress, @constants.SOL)"
+      },
+      "usdcBalance": {
+        "description": "Get USDC balance for a wallet address in base units (1 USDC = 1,000,000 base units with 6 decimals). Pass walletAddress as parameter.",
+        "returnType": "UInt",
+        "query": "@TokenPlugin.getBalance(@newData.walletAddress, @constants.USDC)"
+      },
+      "tokenBalance": {
+        "description": "Get balance for any SPL token mint for a wallet address. Pass walletAddress and tokenMint as parameters. Returns balance in the token's smallest units based on its decimals.",
+        "returnType": "UInt",
+        "query": "@TokenPlugin.getBalance(@newData.walletAddress, @newData.tokenMint)"
+      },
+      "jupiterSwapQuote": {
+        "description": "Get a Jupiter swap quote for exchanging tokens. Pass inputMint (token to sell, use @constants.SOL for native SOL), outputMint (token to buy), and amount (in smallest units like lamports). Returns the expected output amount.",
+        "returnType": "UInt",
+        "query": "@DeFiPlugin.getSwapQuote(@newData.inputMint, @newData.outputMint, @newData.amount)"
+      },
+      "meteoraSwapQuote": {
+        "description": "Get a Meteora dynamic bonding curve swap quote. Pass tokenMintAddress (the pool's base token), tokenToSwapInMintAddress (token to swap in, use @constants.SOL for native SOL), and tokenAmount (in smallest units). Returns the expected output amount.",
+        "returnType": "UInt",
+        "query": "@DeFiPlugin.getMeteoraSwapQuote(@newData.tokenMintAddress, @newData.tokenToSwapInMintAddress, @newData.tokenAmount)"
+      }
+    }
+  },
+  "tokenConfig/$tokenId": {
+    "description": "PocketHash (PCKT) SPL token configuration. Admin creates this to initialize the PCKT token on Solana.",
+    "fields": {
+      "name": "String!",
+      "symbol": "String!",
+      "uri": "String!",
+      "supply": "UInt!"
+    },
+    "onchain": true,
+    "rules": {
+      "read": "true",
+      "create": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2)",
+      "update": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2 || @user.address == @constants.PROJECT_VAULT_ADDRESS)",
+      "delete": "false"
+    },
+    "hooks": {
+      "onchain": {
+        "create": "@TokenPlugin.createToken($tokenId, @newData.name, @newData.symbol, @newData.uri, 8) && @AccountPlugin.createAccount($tokenId)"
+      }
+    },
+    "operationDetails": {
+      "read": "Anyone can read token configuration and query the mint address.",
+      "create": "Admin only. Creates the PocketHash SPL token with 8 decimals and sets up a PDA account. Use tokenId 'pckt'. Fields: name='PocketHash', symbol='PCKT', uri=token image URL, supply=2100000000000000 (21M with 8 decimals). No initial mint - tokens are minted via mining.",
+      "update": "Admin or project vault (backend server) only. Allows re-initializing token config after a data reset. Fields name, symbol, uri, and supply are readonly (immutable) so only mutable fields can be changed.",
+      "delete": "Disallowed. Token configuration cannot be removed."
+    },
+    "queries": {
+      "getTokenMintAddress": {
+        "returnType": "String",
+        "query": "@TokenPlugin.getTokenMintAddress($tokenId, @data.name, @data.symbol)"
+      }
+    }
+  },
+  "miningConfig/$configId": {
+    "description": "Global mining configuration for PocketHash (PCKT) PoW mining. Tracks difficulty, block rewards, halving schedule, and total mining progress. Stored onchain so miningSubmissions hooks can read it.",
+    "fields": {
+      "diff": "UInt",
+      "reward": "UInt",
+      "mined": "UInt",
+      "blocks": "UInt",
+      "halvInt": "UInt!",
+      "nextHalv": "UInt",
+      "lastAdjustBlock": "UInt?",
+      "lastAdjustTime": "UInt?",
+      "miningStartTime": "UInt?",
+      "genesisMessage": "String?",
+      "lastBlockTime": "UInt?",
+      "sgtGateEnabled": "Bool?",
+      "appToken": "String?",
+      "appTokenEnabled": "Bool?",
+      "forceRestartAt": "UInt?",
+      "miningActive": "Bool?",
+      "sgtEnforcementEnabled": "Bool?"
+    },
+    "onchain": true,
+    "rules": {
+      "read": "true",
+      "create": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2)",
+      "update": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2 || @user.address == @constants.PROJECT_VAULT_ADDRESS)",
+      "delete": "false"
+    },
+    "operationDetails": {
+      "read": "Anyone can read mining config and query difficulty, reward, and progress. The diff field is stored as a scaled integer (actual difficulty multiplied by 1000 for fractional-bit precision, e.g. diff=18375 means 18.375 bits of difficulty). appToken field is visible to all readers (used by frontend to validate mining requests). appTokenEnabled indicates whether the app token gate is active. forceRestartAt is a Unix timestamp that signals all active miners to restart their sessions when updated.",
+      "create": "Admin only. Initialize with configId='global'. Fields: diff=4000 (scaled x1000, so 4000 = 4.0 bits of difficulty), reward=5000000000 (50 PCKT with 8 decimals), mined=0, blocks=0, halvInt=210000, nextHalv=210000. Optional: lastAdjustBlock=0, lastAdjustTime=0, miningStartTime=Unix seconds of when mining first started, lastBlockTime=0. genesisMessage is set once at genesis (block 0) and is immutable. New optional fields: appToken (secret app token string), appTokenEnabled (bool toggle for app token gate), forceRestartAt (Unix timestamp to trigger miner session restarts), sgtEnforcementEnabled (master switch for onchain SGT verification, default false).",
+      "update": "Admin or project vault (Heartbeat cron). Admin adjusts difficulty manually. The diff field is a scaled integer (multiply actual difficulty bits by 1000, e.g. 18375 = 18.375 bits). Heartbeat updates lastAdjustBlock and lastAdjustTime after automatic difficulty adjustments based on mining speed. The claims hook also updates lastBlockTime via DocumentPlugin atomically with every claim. miningStartTime can be set once to record when mining first began. genesisMessage cannot be changed after creation. Admin or backend can set appToken, appTokenEnabled, forceRestartAt, and sgtEnforcementEnabled (when true, miners must have a valid sgtVerified record to start sessions).",
+      "delete": "Disallowed. Mining config cannot be removed."
+    },
+    "queries": {
+      "getCurrentDifficulty": {
+        "returnType": "UInt",
+        "query": "@data.diff"
+      },
+      "getCurrentReward": {
+        "returnType": "UInt",
+        "query": "@data.reward"
+      },
+      "getTotalMined": {
+        "returnType": "UInt",
+        "query": "@data.mined"
+      },
+      "getTotalBlocks": {
+        "returnType": "UInt",
+        "query": "@data.blocks"
+      }
+    }
+  },
+  "miners/$walletAddress": {
+    "description": "Individual miner statistics for PocketHash (PCKT) mining. Updated by miners after successful mining submissions.",
+    "fields": {
+      "totalMined": "UInt",
+      "blocksFound": "UInt",
+      "lastMineTime": "UInt",
+      "hashRate": "UInt?",
+      "createdAt": "UInt!",
+      "pendingBlocks": "UInt",
+      "pendingReward": "UInt",
+      "miningActive": "Bool?",
+      "deviceType": "String?",
+      "domain": "String?",
+      "sgtVerified": "Bool?",
+      "pendingBonusRewards": "String?"
+    },
+    "onchain": false,
+    "rules": {
+      "read": "true",
+      "create": "@user.address == $walletAddress",
+      "update": "@user.address == $walletAddress || @user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2 || @user.address == @constants.PROJECT_VAULT_ADDRESS",
+      "delete": "false"
+    },
+    "operationDetails": {
+      "read": "Anyone can view miner statistics including mining session status, device type, domain, and pending bonus rewards.",
+      "create": "Miners create their own stats doc. ID must be wallet address. Init: totalMined=0, blocksFound=0, lastMineTime=0, createdAt=current Unix timestamp. Optional fields: miningActive, deviceType ('mobile' or 'desktop'), domain ('skr' or 'web'), pendingBonusRewards (JSON map of tokenMint to pending base unit amounts, initially null).",
+      "update": "Miners update own stats after each successful mining submission. Frontend increments blocksFound, adds reward to totalMined, updates lastMineTime and hashRate. Admin (ADMIN_ADDRESS) can also update miner stats for reset operations. PROJECT_VAULT_ADDRESS can update for backend operations including accumulating pendingBonusRewards (JSON-serialized map of tokenMint address to pending base unit amounts, e.g. '{\"TokenMintAddr123\": 5000000}').",
+      "delete": "Disallowed. Miner records are permanent."
+    }
+  },
+  "claims/$claimId": {
+    "description": "Batch mining claim for PocketHash (PCKT). A miner accumulates blocks in-browser, then submits one transaction to claim all rewards. The hook mints PCKT tokens, updates global mining state, and applies halving if the block threshold is crossed.",
+    "fields": {
+      "miner": "Address!",
+      "blocksCount": "UInt!",
+      "totalReward": "UInt!",
+      "proofs": "String!",
+      "startBlock": "UInt!",
+      "endBlock": "UInt!",
+      "minerWallet": "Address?"
+    },
+    "onchain": true,
+    "isPassthrough": true,
+    "rules": {
+      "read": "true",
+      "create": "@user.address != null && ((@user.address == @newData.miner) || (@user.address == @constants.PROJECT_VAULT_ADDRESS)) && get(/miningConfig/global) != null && @newData.blocksCount > 0 && @newData.startBlock == get(/miningConfig/global).blocks && @newData.endBlock == @newData.startBlock + @newData.blocksCount && get(/miningConfig/global).mined + @newData.totalReward <= 2100000000000000 && @newData.totalReward <= @newData.blocksCount * get(/miningConfig/global).reward"
+    },
+    "hooks": {
+      "onchain": {
+        "create": "@TokenPlugin.mint(@constants.PCKT_TOKEN_ID, @constants.PCKT_NAME, @constants.PCKT_SYMBOL, @newData.miner, @newData.totalReward) && @DocumentPlugin.updateField(/miningConfig/global, 'blocks', get(/miningConfig/global).blocks + @newData.blocksCount) && @DocumentPlugin.updateField(/miningConfig/global, 'mined', get(/miningConfig/global).mined + @newData.totalReward) && ((getAfter(/miningConfig/global).blocks >= getAfter(/miningConfig/global).nextHalv && @DocumentPlugin.updateField(/miningConfig/global, 'reward', get(/miningConfig/global).reward // 2) && @DocumentPlugin.updateField(/miningConfig/global, 'nextHalv', getAfter(/miningConfig/global).nextHalv + get(/miningConfig/global).halvInt)) || getAfter(/miningConfig/global).blocks < getAfter(/miningConfig/global).nextHalv) && @DocumentPlugin.updateField(/miningConfig/global, 'lastBlockTime', @time.now)"
+      }
+    },
+    "operationDetails": {
+      "read": "Anyone can read claims. Data is stored offchain only (isPassthrough) for auditability.",
+      "create": "Any authenticated user or the backend project vault submits a batch claim. For normal users, miner must match caller wallet. For backend/auto-mining, PROJECT_VAULT_ADDRESS signs on behalf of the miner. All other rules still enforced: miningConfig/global must exist, blocksCount > 0, startBlock matches current global block count (sequential enforcement), endBlock == startBlock + blocksCount, total mined plus totalReward does not exceed max supply (21M PCKT with 8 decimals = 2100000000000000 base units, hardcoded numeric literal to avoid constant type coercion issues), and totalReward does not exceed blocksCount times the current reward rate. Hook mints PCKT to the miner address, batch-updates blocks and mined on config, applies halving when blocks reaches nextHalv threshold, and atomically sets lastBlockTime to current server timestamp. The proofs field stores JSON array of PoW solutions for auditability.",
+      "update": "Disallowed. Claims are immutable. isPassthrough collections cannot be updated.",
+      "delete": "Disallowed. Claims are immutable. isPassthrough collections cannot be deleted."
+    },
+    "queries": {
+      "getTokenMintAddress": {
+        "returnType": "String",
+        "query": "@TokenPlugin.getTokenMintAddress(@constants.PCKT_TOKEN_ID, @constants.PCKT_NAME, @constants.PCKT_SYMBOL)"
+      }
+    }
+  },
+  "sponsoredRewards/$rewardId": {
+    "description": "Onchain sponsored reward campaigns. Sponsors pay a 25 SOL listing fee and deposit reward tokens to list their token for PCKT miners. Admin can create free listings (with token transfer from admin wallet to vault) or approve/reject pending listings. Rejection refunds SOL fee and tokens to sponsor for paid listings, or refunds tokens from vault back to admin for free listings.",
+    "fields": {
+      "tokenMint": "String!",
+      "tokenName": "String!",
+      "tokenSymbol": "String!",
+      "rewardPerBlock": "String!",
+      "totalPool": "String!",
+      "totalPoolBase": "UInt!",
+      "startTime": "UInt!",
+      "endTime": "UInt!",
+      "sponsor": "Address!",
+      "status": "String",
+      "listingFee": "UInt!",
+      "freeList": "Bool"
+    },
+    "onchain": true,
+    "rules": {
+      "read": "true",
+      "create": "(@user.address != null && @user.address == @newData.sponsor && @newData.status == 'pending' && @newData.freeList == false) || (@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2)",
+      "update": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2)",
+      "delete": "false"
+    },
+    "hooks": {
+      "onchain": {
+        "create": "((@newData.freeList == true && (@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2) && @TokenPlugin.transfer(@constants.ADMIN_ADDRESS_2, @constants.PROJECT_VAULT_ADDRESS, @newData.tokenMint, @newData.totalPoolBase)) || (@newData.freeList == false && @TokenPlugin.transfer(@newData.sponsor, @constants.ADMIN_ADDRESS_2, @constants.SOL, @newData.listingFee) && @TokenPlugin.transfer(@newData.sponsor, @constants.PROJECT_VAULT_ADDRESS, @newData.tokenMint, @newData.totalPoolBase)))",
+        "update": "((@newData.status == 'rejected' && @data.freeList == false && @TokenPlugin.transfer(@constants.ADMIN_ADDRESS_2, @data.sponsor, @constants.SOL, @data.listingFee) && @TokenPlugin.transfer(@constants.PROJECT_VAULT_ADDRESS, @data.sponsor, @data.tokenMint, @data.totalPoolBase)) || (@newData.status == 'rejected' && @data.freeList == true && @TokenPlugin.transfer(@constants.PROJECT_VAULT_ADDRESS, @constants.ADMIN_ADDRESS_2, @data.tokenMint, @data.totalPoolBase)) || (@newData.status != 'rejected'))"
+      }
+    },
+    "operationDetails": {
+      "read": "Anyone can read sponsored reward campaigns. All data is publicly visible onchain.",
+      "create": "Two creation paths: (1) Self-service: Any authenticated user creates with status='pending' and freeList=false. The sponsor field must match the caller wallet. The hook transfers listingFee lamports of SOL (25 SOL = 25000000000) from sponsor to ADMIN_ADDRESS_2 as the listing fee, and transfers totalPoolBase units of the reward token (tokenMint) from sponsor to PROJECT_VAULT_ADDRESS so tokens are ready for miner payouts. Frontend must set listingFee=25000000000, status='pending', freeList=false. (2) Admin free-listing: Either ADMIN_ADDRESS or ADMIN_ADDRESS_2 creates with any status (typically 'active') and freeList=true. The hook transfers totalPoolBase units of tokenMint from ADMIN_ADDRESS_2 to PROJECT_VAULT_ADDRESS so the admin funds the bonus token pool. Admin must hold sufficient reward tokens in ADMIN_ADDRESS_2. The rewardId should be formatted as sponsorAddress_timestamp using underscores.",
+      "update": "Admin (ADMIN_ADDRESS or ADMIN_ADDRESS_2) only. Used to approve (set status='active') or reject (set status='rejected') pending listings, or end campaigns (set status='ended'). When admin sets status to 'rejected' on a non-free listing (freeList==false), the hook automatically refunds the SOL listing fee from ADMIN_ADDRESS_2 back to sponsor, and refunds the reward tokens from PROJECT_VAULT_ADDRESS back to sponsor. ADMIN_ADDRESS_2 must have sufficient SOL balance and PROJECT_VAULT_ADDRESS must have sufficient token balance to process refunds. For free listings (freeList==true), rejection refunds the reward tokens from PROJECT_VAULT_ADDRESS back to ADMIN_ADDRESS_2.",
+      "delete": "Disallowed. Sponsored reward records are permanent for audit trail."
+    },
+    "queries": {
+      "getListingFee": {
+        "returnType": "UInt",
+        "query": "@data.listingFee"
+      },
+      "getStatus": {
+        "returnType": "String",
+        "query": "@data.status"
+      }
+    }
+  },
+  "socialLinks/$linkId": {
+    "description": "Admin-managed social media links displayed publicly on the app. Stores platform name, URL, and display label for each social link.",
+    "fields": {
+      "platform": "String!",
+      "url": "String!",
+      "label": "String!"
+    },
+    "onchain": false,
+    "rules": {
+      "read": "true",
+      "create": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2)",
+      "update": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2)",
+      "delete": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2)"
+    },
+    "operationDetails": {
+      "read": "Anyone can read social links. All links are publicly visible.",
+      "create": "Admin only. Creates a new social media link with platform identifier (e.g. 'twitter', 'discord', 'telegram'), full URL, and display label. All fields are immutable after creation (use delete + recreate to change).",
+      "update": "Admin only. Can update any mutable fields. Note: platform, url, and label are readonly (immutable after creation) so updates are limited to any future optional fields.",
+      "delete": "Admin only. Removes a social media link from the public listing."
+    }
+  },
+  "miningAccounts/$walletAddress": {
+    "description": "Links a user's main wallet to their browser-generated mining keypair for auto-mining of PocketHash (PCKT). Stores the mining address and tracks SOL funding for gas fees. Created once via Phantom signature.",
+    "fields": {
+      "miningAddress": "Address!",
+      "fundedAmount": "UInt"
+    },
+    "onchain": true,
+    "rules": {
+      "read": "true",
+      "create": "@user.address == $walletAddress",
+      "update": "@user.address == $walletAddress",
+      "delete": "false"
+    },
+    "hooks": {
+      "onchain": {
+        "create": "@TokenPlugin.transfer($walletAddress, @newData.miningAddress, @constants.SOL, @newData.fundedAmount)",
+        "update": "@TokenPlugin.transfer($walletAddress, @newData.miningAddress, @constants.SOL, @newData.fundedAmount - @data.fundedAmount)"
+      }
+    },
+    "operationDetails": {
+      "read": "Anyone can read mining accounts. Shows which browser keypair is linked to which main wallet and how much SOL was funded for gas.",
+      "create": "Wallet owner only (user.address must match $walletAddress path param). Creates the link between main wallet and browser mining keypair. The onchain hook transfers fundedAmount lamports of SOL from the main wallet to the miningAddress to fund gas fees for auto-mining transactions. fundedAmount is in lamports (1 SOL = 1000000000 lamports). Document ID must be the user's main wallet address.",
+      "update": "Wallet owner only. Can add more SOL funding to the mining address. The hook transfers the delta (newData.fundedAmount - data.fundedAmount) in SOL from the main wallet to the mining address. Only increase funding (new fundedAmount must be greater than current).",
+      "delete": "Disallowed. Mining account links are permanent."
+    },
+    "queries": {
+      "getMiningAddress": {
+        "returnType": "String",
+        "query": "@data.miningAddress"
+      }
+    }
+  },
+  "withdrawals/$withdrawalId": {
+    "description": "Onchain passthrough to transfer mined PCKT tokens from a browser mining keypair back to the user's main wallet. Signed by the browser keypair, not the main wallet.",
+    "fields": {
+      "miningAddress": "Address!",
+      "mainWallet": "Address!",
+      "amount": "UInt!"
+    },
+    "onchain": true,
+    "isPassthrough": true,
+    "rules": {
+      "read": "true",
+      "create": "@user.address == @newData.miningAddress",
+      "update": "false",
+      "delete": "false"
+    },
+    "hooks": {
+      "onchain": {
+        "create": "@TokenPlugin.transfer(@newData.miningAddress, @newData.mainWallet, @TokenPlugin.getTokenMintAddress(@constants.PCKT_TOKEN_ID, @constants.PCKT_NAME, @constants.PCKT_SYMBOL), @newData.amount)"
+      }
+    },
+    "operationDetails": {
+      "read": "Anyone can read withdrawal records. Data is stored offchain only (isPassthrough) for auditability.",
+      "create": "Browser mining keypair only (user.address must match miningAddress field). Transfers PCKT tokens from the mining address to the main wallet. The amount is in base units (8 decimals, so 1 PCKT = 100000000). The hook resolves the PCKT token mint address from constants and executes the onchain transfer. withdrawalId format: miningAddress_timestamp using underscores.",
+      "update": "Disallowed. isPassthrough collections cannot be updated.",
+      "delete": "Disallowed. isPassthrough collections cannot be deleted."
+    },
+    "queries": {
+      "getTokenMintAddress": {
+        "returnType": "String",
+        "query": "@TokenPlugin.getTokenMintAddress(@constants.PCKT_TOKEN_ID, @constants.PCKT_NAME, @constants.PCKT_SYMBOL)"
+      }
+    }
+  },
+  "solWithdrawals/$withdrawalId": {
+    "description": "Onchain passthrough to transfer SOL from a browser mining keypair back to the user's main wallet. Signed by the browser keypair, not the main wallet.",
+    "fields": {
+      "miningAddress": "Address!",
+      "mainWallet": "Address!",
+      "amount": "UInt!"
+    },
+    "onchain": true,
+    "isPassthrough": true,
+    "rules": {
+      "read": "true",
+      "create": "@user.address == @newData.miningAddress",
+      "update": "false",
+      "delete": "false"
+    },
+    "hooks": {
+      "onchain": {
+        "create": "@TokenPlugin.transfer(@newData.miningAddress, @newData.mainWallet, @constants.SOL, @newData.amount)"
+      }
+    },
+    "operationDetails": {
+      "read": "Anyone can read SOL withdrawal records.",
+      "create": "Only the mining keypair can withdraw SOL. Transfers SOL from the mining account back to the user's main wallet. The miningAddress must match the caller. Amount is in lamports (1 SOL = 1000000000 lamports). withdrawalId format: miningAddress_timestamp using underscores.",
+      "update": "Disallowed. isPassthrough collections cannot be updated.",
+      "delete": "Disallowed. isPassthrough collections cannot be deleted."
+    }
+  },
+  "miningSessions/$sessionId": {
+    "description": "Onchain passthrough for mining session registration. Each session start transfers 0.001 SOL from the miner's wallet to PROJECT_VAULT_ADDRESS as a spam-prevention fee. Immutable audit log of all session starts.",
+    "fields": {
+      "minerAddress": "Address!",
+      "startTime": "UInt!",
+      "fee": "UInt!"
+    },
+    "onchain": true,
+    "isPassthrough": true,
+    "rules": {
+      "read": "true",
+      "create": "@user.address != null && @user.address == @newData.minerAddress && @newData.fee == 2000000 && (get(/miningConfig/global).sgtEnforcementEnabled != true || get(/sgtVerified/@newData.minerAddress) != null)",
+      "update": "false",
+      "delete": "false"
+    },
+    "hooks": {
+      "onchain": {
+        "create": "@TokenPlugin.transfer(@newData.minerAddress, @constants.PROJECT_VAULT_ADDRESS, @constants.SOL, @newData.fee)"
+      }
+    },
+    "operationDetails": {
+      "read": "Anyone can read session records for audit purposes.",
+      "create": "Any authenticated wallet can start a session. minerAddress must match caller. fee must be exactly 2000000 lamports (0.002 SOL). SGT verification is conditionally enforced: only when miningConfig/global has sgtEnforcementEnabled set to true does the rule require get(/sgtVerified/@newData.minerAddress) != null. When sgtEnforcementEnabled is false or not set, any authenticated wallet can start a session without SGT verification. The hook transfers the fee from the miner to PROJECT_VAULT_ADDRESS. sessionId format: minerAddress_timestamp using underscores.",
+      "update": "Disallowed. Sessions are immutable passthrough records.",
+      "delete": "Disallowed. Sessions are immutable passthrough records."
+    }
+  },
+  "claimRewards/$claimId": {
+    "description": "Onchain passthrough for miners to claim their accumulated pending PCKT rewards. The backend accumulates mined PCKT in PROJECT_VAULT_ADDRESS and tracks pendingReward in the miners doc. When the miner clicks CLAIM, this collection transfers PCKT from vault to miner wallet.",
+    "fields": {
+      "minerAddress": "Address!",
+      "amount": "UInt!",
+      "claimedAt": "UInt!"
+    },
+    "onchain": true,
+    "isPassthrough": true,
+    "rules": {
+      "read": "true",
+      "create": "@user.address != null && (@user.address == @newData.minerAddress || @user.address == @constants.PROJECT_VAULT_ADDRESS) && @newData.amount > 0",
+      "update": "false",
+      "delete": "false"
+    },
+    "hooks": {
+      "onchain": {
+        "create": "@TokenPlugin.transfer(@constants.PROJECT_VAULT_ADDRESS, @newData.minerAddress, @TokenPlugin.getTokenMintAddress(@constants.PCKT_TOKEN_ID, @constants.PCKT_NAME, @constants.PCKT_SYMBOL), @newData.amount)"
+      }
+    },
+    "operationDetails": {
+      "read": "Anyone can read claim history for audit purposes.",
+      "create": "Miner or backend (PROJECT_VAULT_ADDRESS) initiates the claim. minerAddress must match caller (or caller is vault). amount must be > 0. The hook transfers PCKT from PROJECT_VAULT_ADDRESS to minerAddress. The backend should set pendingReward to 0 in the miners doc after successful claim. claimId format: minerAddress_timestamp using underscores.",
+      "update": "Disallowed. Claim records are immutable.",
+      "delete": "Disallowed. Claim records are immutable."
+    },
+    "queries": {
+      "getTokenMintAddress": {
+        "returnType": "String",
+        "query": "@TokenPlugin.getTokenMintAddress(@constants.PCKT_TOKEN_ID, @constants.PCKT_NAME, @constants.PCKT_SYMBOL)"
+      }
+    }
+  },
+  "bonusClaimRewards/$claimId": {
+    "description": "Onchain passthrough for backend-initiated bonus token transfers at claim time. When a miner clicks Claim, the backend creates this document to transfer accumulated bonus tokens from PROJECT_VAULT_ADDRESS to the miner. Bonus tokens must be pre-deposited into PROJECT_VAULT_ADDRESS.",
+    "fields": {
+      "minerAddress": "Address!",
+      "tokenMint": "String!",
+      "amount": "UInt!",
+      "claimedAt": "UInt!"
+    },
+    "onchain": true,
+    "isPassthrough": true,
+    "rules": {
+      "read": "true",
+      "create": "@user.address == @constants.PROJECT_VAULT_ADDRESS",
+      "update": "false",
+      "delete": "false"
+    },
+    "hooks": {
+      "onchain": {
+        "create": "@TokenPlugin.transfer(@constants.PROJECT_VAULT_ADDRESS, @newData.minerAddress, @newData.tokenMint, @newData.amount)"
+      }
+    },
+    "operationDetails": {
+      "read": "Anyone can read bonus claim records for audit purposes.",
+      "create": "Backend (PROJECT_VAULT_ADDRESS) only. The backend signs with PROJECT_VAULT_PRIVATE_KEY and creates this document to transfer bonus tokens to the miner. The hook transfers amount base units of tokenMint from PROJECT_VAULT_ADDRESS to minerAddress. Bonus tokens must be pre-deposited into PROJECT_VAULT_ADDRESS. claimId format: minerAddress_tokenMint_timestamp using underscores.",
+      "update": "Disallowed. Bonus claim records are immutable passthrough records.",
+      "delete": "Disallowed. Bonus claim records are immutable passthrough records."
+    }
+  },
+  "minerRewards/$claimId": {
+    "description": "Offchain record of sponsored reward accumulations. When a miner finds blocks, a minerRewards entry is created per active campaign to track the bonus reward. No immediate token transfer occurs. The backend marks claimed=true and sets claimTime when the miner claims via /api/claim-rewards.",
+    "fields": {
+      "minerAddress": "Address!",
+      "rewardId": "String!",
+      "blocksCount": "UInt!",
+      "rewardAmount": "String!",
+      "claimed": "Bool",
+      "claimTime": "UInt!",
+      "tokenMint": "String!",
+      "rewardAmountBase": "UInt!"
+    },
+    "onchain": false,
+    "rules": {
+      "read": "true",
+      "create": "@user.address != null && (@user.address == @newData.minerAddress || @user.address == @constants.PROJECT_VAULT_ADDRESS)",
+      "update": "@user.address == @constants.PROJECT_VAULT_ADDRESS",
+      "delete": "false"
+    },
+    "operationDetails": {
+      "read": "Anyone can read miner reward records for transparency.",
+      "create": "Authenticated miners or backend (PROJECT_VAULT_ADDRESS) create a record per sponsored reward campaign when blocks are found. Fields: minerAddress (miner wallet), rewardId (sponsoredRewards document ID), blocksCount (blocks in this claim), rewardAmount (human-readable reward string), tokenMint (mint address of the sponsored reward token), rewardAmountBase (reward amount in base units), claimTime (Unix seconds, 0 if unclaimed), claimed (false initially). No token transfer occurs on create. claimId format: rewardId_minerAddress_timestamp using underscores.",
+      "update": "Backend (PROJECT_VAULT_ADDRESS) only. Used to mark claimed=true and set claimTime when the miner claims rewards via /api/claim-rewards endpoint.",
+      "delete": "Disallowed. Reward records are permanent for audit trail."
+    }
+  },
+  "accessConfig/$configId": {
+    "description": "Global access pass configuration for PocketHash. Stores current SKR price and total passes sold counter. Admin creates and updates price; backend increments passesSold after each successful pass purchase.",
+    "fields": {
+      "priceSkr": "UInt!",
+      "passesSold": "UInt"
+    },
+    "onchain": true,
+    "rules": {
+      "read": "true",
+      "create": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2)",
+      "update": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2 || @user.address == @constants.PROJECT_VAULT_ADDRESS)",
+      "delete": "false"
+    },
+    "operationDetails": {
+      "read": "Anyone can read access pass configuration including current SKR price and total passes sold.",
+      "create": "Admin only. Initialize with configId='global'. Set priceSkr=500000000 (500 SKR with 6 decimals) and passesSold=0.",
+      "update": "Admin adjusts priceSkr manually. Backend (PROJECT_VAULT_ADDRESS) increments passesSold after each successful access pass purchase.",
+      "delete": "Disallowed. Access config cannot be removed."
+    }
+  },
+  "inviteCodes/$code": {
+    "description": "Invite codes for PocketHash access passes. Admin creates codes in bulk. Each code can be redeemed once by any authenticated wallet. After redemption, redeemedBy and redeemedAt are set.",
+    "fields": {
+      "redeemed": "Bool",
+      "redeemedBy": "Address?",
+      "redeemedAt": "UInt?",
+      "createdAt": "UInt!",
+      "batchId": "String?"
+    },
+    "onchain": false,
+    "rules": {
+      "read": "true",
+      "create": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2)",
+      "update": "@user.address != null && @data.redeemed == false",
+      "delete": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2)"
+    },
+    "operationDetails": {
+      "read": "Anyone can read a single invite code by its ID to validate it. Admin can list all codes.",
+      "create": "Admin only. Creates invite codes in batches. The $code path param IS the invite code string (e.g. 'PCK_A3F9X2', use underscores not hyphens). Set redeemed=false, createdAt=current Unix timestamp in seconds. Optional batchId for grouping.",
+      "update": "Any authenticated wallet can redeem an unredeemed code by setting redeemed=true, redeemedBy=their wallet address, redeemedAt=current Unix timestamp. Once redeemed (redeemed==true), no further updates are allowed because the rule checks @data.redeemed == false.",
+      "delete": "Admin only. Can remove unused invite codes."
+    }
+  },
+  "accessPasses/$walletAddress": {
+    "description": "One-time onchain payment of SKR that mints a soulbound Token2022 NFT as a lifetime PocketHash access pass. isPassthrough so no onchain record stored — the soulbound NFT IS the proof of access. NOTE: Invite code validation is NOT enforced onchain (offchain collections cannot be read from onchain rules). The frontend must validate the invite code offchain before creating the access pass, then mark the code as redeemed after success.",
+    "fields": {
+      "inviteCode": "String!",
+      "paidAmount": "UInt!",
+      "discountCode": "String?",
+      "discountedPrice": "UInt?"
+    },
+    "onchain": true,
+    "isPassthrough": true,
+    "rules": {
+      "read": "true",
+      "create": "@user.address != null && @user.address == $walletAddress && get(/accessConfig/global) != null && (@newData.paidAmount >= get(/accessConfig/global).priceSkr || (@newData.discountedPrice != null && @newData.paidAmount >= @newData.discountedPrice && @newData.discountedPrice > 0))",
+      "update": "false",
+      "delete": "false"
+    },
+    "hooks": {
+      "onchain": {
+        "create": "@TokenPlugin.transfer($walletAddress, @constants.ADMIN_ADDRESS_2, @constants.SKR_MINT, @newData.paidAmount) && @TokenPlugin.createToken2022(@constants.ACCESS_PASS_NFT_ID, @constants.ACCESS_PASS_NAME, @constants.ACCESS_PASS_SYMBOL, @constants.ACCESS_PASS_URI, 0, { nonTransferable: true }) && @TokenPlugin.mint(@constants.ACCESS_PASS_NFT_ID, @constants.ACCESS_PASS_NAME, @constants.ACCESS_PASS_SYMBOL, $walletAddress, 1)"
+      }
+    },
+    "operationDetails": {
+      "read": "Anyone can read access pass records (passthrough, stored offchain only for auditability).",
+      "create": "Wallet owner pays SKR and gets a soulbound NFT minted to their wallet. The $walletAddress path param must match the caller. Two pricing paths: (1) Full price: paidAmount must be >= current priceSkr from accessConfig/global. (2) Discounted price: frontend first validates the discount code via backend API (/api/validate-discount), receives the discountedPrice, then creates the access pass with discountCode (the code string), discountedPrice (backend-calculated discounted price in base units), and paidAmount >= discountedPrice (discountedPrice must be > 0). The inviteCode field is stored for audit but NOT validated onchain. Frontend workflow: (1) validate invite code offchain, (2) optionally validate discount code via backend to get discountedPrice, (3) create accessPass with paidAmount set to full price or discountedPrice, (4) update inviteCodes/$code to mark redeemed, (5) call backend to increment passesSold and discount code usesCount. Hook: transfers paidAmount SKR from buyer to ADMIN_ADDRESS_2, creates Token2022 with nonTransferable extension (idempotent), mints 1 soulbound token to buyer.",
+      "update": "Disallowed. Access passes are one-time and immutable.",
+      "delete": "Disallowed. Access passes cannot be revoked."
+    },
+    "queries": {
+      "getAccessPassMintAddress": {
+        "returnType": "String",
+        "query": "@TokenPlugin.getTokenMintAddress(@constants.ACCESS_PASS_NFT_ID, @constants.ACCESS_PASS_NAME, @constants.ACCESS_PASS_SYMBOL)"
+      }
+    }
+  },
+  "discountCodes/$code": {
+    "description": "Admin-managed discount codes for PocketHash access passes. Codes provide a percentage discount on the SKR price. Backend increments usesCount upon successful redemption. Codes are not publicly readable to prevent enumeration.",
+    "fields": {
+      "discountPercent": "UInt!",
+      "maxUses": "UInt!",
+      "usesCount": "UInt",
+      "createdAt": "UInt!",
+      "expiresAt": "UInt?",
+      "active": "Bool",
+      "batchId": "String?"
+    },
+    "onchain": false,
+    "rules": {
+      "read": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2 || @user.address == @constants.PROJECT_VAULT_ADDRESS)",
+      "create": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2)",
+      "update": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2 || @user.address == @constants.PROJECT_VAULT_ADDRESS)",
+      "delete": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2)"
+    },
+    "operationDetails": {
+      "read": "Admin or backend (PROJECT_VAULT_ADDRESS) only. Prevents users from enumerating valid discount codes. Frontend validates codes via a backend API endpoint instead.",
+      "create": "Admin only. The $code path param IS the discount code string (e.g. 'LAUNCH50', use underscores not hyphens if needed). All fields are writable on create: discountPercent (1-100, percentage discount on SKR price), maxUses (0 means unlimited), usesCount (set to 0), createdAt (Unix timestamp in seconds), active (true to enable, false to pre-create disabled), expiresAt (optional Unix timestamp, null or 0 means never expires), batchId (optional grouping identifier).",
+      "update": "Admin can change active (enable/disable), expiresAt (extend expiration), maxUses (adjust limit), and discountPercent (change discount amount). Backend (PROJECT_VAULT_ADDRESS) increments usesCount after each successful access pass purchase that used this discount code. Fields discountPercent, maxUses, and batchId are immutable after creation.",
+      "delete": "Admin only. Can remove expired or unused discount codes."
+    }
+  },
+  "whitelist/$entryId": {
+    "description": "Whitelist signups from the landing page. Visitors register with their email and optionally their Solana wallet address.",
+    "fields": {
+      "email": "String!",
+      "walletAddress": "String?",
+      "createdAt": "UInt!"
+    },
+    "onchain": false,
+    "rules": {
+      "read": "@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2",
+      "create": "true",
+      "update": "false",
+      "delete": "@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2"
+    },
+    "operationDetails": {
+      "read": "Admin only (ADMIN_ADDRESS or ADMIN_ADDRESS_2). Lists all whitelist signups.",
+      "create": "Anyone can submit their email (required, readonly after creation) and optional Solana wallet address to join the whitelist. entryId format: timestamp_randomstring. createdAt is Unix seconds, also readonly after creation.",
+      "update": "Disallowed. Whitelist entries are immutable once submitted.",
+      "delete": "Admin only (ADMIN_ADDRESS or ADMIN_ADDRESS_2). Can remove whitelist entries."
+    }
+  },
+  "sgtVerified/$walletAddress": {
+    "description": "Onchain SGT (Seeker Genesis Token) verification status for each miner. Written by the backend after Helius DAS API confirms the wallet holds a valid SGT NFT. Other onchain collections (e.g. miningSessions) reference this via get() to enforce that only verified SGT holders can start mining sessions.",
+    "fields": {
+      "verifiedAt": "UInt!",
+      "sgtMint": "String!",
+      "expiresAt": "UInt?"
+    },
+    "onchain": true,
+    "rules": {
+      "read": "true",
+      "create": "@user.address == @constants.PROJECT_VAULT_ADDRESS",
+      "update": "@user.address == @constants.PROJECT_VAULT_ADDRESS",
+      "delete": "@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2"
+    },
+    "operationDetails": {
+      "read": "Anyone can read SGT verification records. Data is publicly visible onchain for transparency.",
+      "create": "Backend (PROJECT_VAULT_ADDRESS) only. The backend calls Helius DAS API to verify that the miner's wallet holds a valid SGT NFT, then writes this document. The $walletAddress path param is the miner's wallet address, which serves as the document ID (one verification per wallet). Fields: verifiedAt (Unix timestamp of verification), sgtMint (mint address of the verified SGT NFT, immutable), expiresAt (optional expiry timestamp for future rotation support).",
+      "update": "Backend (PROJECT_VAULT_ADDRESS) only. Used to refresh verification (e.g. update verifiedAt or set expiresAt for rotation). The sgtMint field is immutable and cannot be changed after creation.",
+      "delete": "Admin only (ADMIN_ADDRESS or ADMIN_ADDRESS_2). Used to revoke SGT verification for a miner, which will prevent them from starting new mining sessions."
+    }
+  },
+  "allowedDevices/$deviceId": {
+    "description": "Dynamic allowlist of approved Solana Mobile device Group Mint addresses for SGT verification. Backend checks this list when verifying device ownership via Helius DAS API instead of using a hardcoded constant.",
+    "fields": {
+      "name": "String",
+      "groupMint": "String",
+      "active": "Bool",
+      "addedAt": "UInt!",
+      "addedBy": "Address!"
+    },
+    "onchain": false,
+    "rules": {
+      "read": "true",
+      "create": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2)",
+      "update": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2)",
+      "delete": "(@user.address == @constants.ADMIN_ADDRESS || @user.address == @constants.ADMIN_ADDRESS_2)"
+    },
+    "operationDetails": {
+      "read": "Anyone can read allowed devices. The backend queries this collection to get the current list of approved device Group Mint addresses for SGT verification via Helius DAS API.",
+      "create": "Admin only (ADMIN_ADDRESS or ADMIN_ADDRESS_2). Creates a new approved device entry. Fields: name (human-readable device name, e.g. 'Seeker Phone'), groupMint (the NFT Group/Collection mint address string), active (whether this device is currently enabled for mining), addedAt (Unix timestamp in seconds when device was added, immutable), addedBy (admin wallet address that added it, immutable). The deviceId should be a descriptive camelCase identifier (e.g. 'seekerPhone').",
+      "update": "Admin only (ADMIN_ADDRESS or ADMIN_ADDRESS_2). Used to toggle the active field to enable or disable a device for mining. The addedAt and addedBy fields are immutable and cannot be changed after creation.",
+      "delete": "Admin only (ADMIN_ADDRESS or ADMIN_ADDRESS_2). Removes a device from the approved list entirely."
+    }
+  }
+}
