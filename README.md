@@ -1,35 +1,63 @@
-# 💎 PocketHash (PCKT)
-### The First Proof-of-Device PoW Protocol for the Solana Seeker
+# ⛏️ PocketHash (PCKT) – Mobile-First Proof-of-Work
 
-PocketHash is a decentralized, fair-launch mining protocol designed exclusively for the **Solana Mobile** ecosystem. Built during a 7-day high-velocity sprint, it brings the scarcity and security principles of Proof-of-Work to the Seeker smartphone.
+PocketHash is a native Proof-of-Work (PoW) protocol built exclusively for the **Solana Seeker**. It reintroduces fair-launch mechanics to the Solana ecosystem by requiring real computational work for token distribution.
 
-## 🌟 The Vision
-PocketHash was created to solve the "unfair launch" problem in modern crypto. By removing VCs, pre-mines, and insider allocations, we return to a model where tokens are earned through honest computational work. 
+> **"No pre-mine. No VCs. No insiders. Just honest work."**
 
-## 🚀 Technical Innovation
+---
 
-### 1. Adaptive CPU Throttle (Energy Efficiency)
-To prevent battery drain and overheating on mobile devices, I developed an **Adaptive CPU Throttle**. 
-- **Mechanism:** The miner measures real-time execution of SHA-256 batches and dynamically calculates sleep intervals.
-- **Modes:** 🌿 **Eco** (~5% CPU) for all-day background mining and ⚡ **Turbo** (~8% CPU) for maximum performance.
+## 🛡️ The "Triple-Lock" Hardware Security
+To solve the "transferable NFT" issue (SGT transferability), PocketHash implements a multi-layer hardware enforcement model:
 
-### 2. On-Chain SGT Hardware Gate
-PocketHash is the first protocol to use a mandatory hardware-attestation gate.
-- **Verification:** The system queries the **Helius DAS API** to verify the presence of the **Seeker Genesis Token (SGT)**.
-- **Enforcement:** Verification is written to an on-chain `sgtVerified` record via **Poof Policy**, making the protocol immune to bot farms and emulators.
+1. **Asset Gate:** Verifies ownership of the **Seeker Genesis Token (SGT)** via Helius DAS API.
+2. **Hardware Anchor:** Requires all mining sessions to be initialized via the **Solana Seed Vault**. Only a physical Seeker device can sign these transactions; transferred NFTs on software wallets will fail.
+3. **Distribution Gate:** Distributed exclusively through the **Solana dApp Store**, ensuring a secure, mobile-native environment.
 
-### 3. Bit-Based Difficulty Adjustment
-- **Precision:** 1/8-bit precision for fine-grained difficulty scaling.
-- **Epochs:** Difficulty adjusts every 30 blocks (~5 hours) to maintain a stable 10-minute block time, regardless of network hashrate.
+---
 
-## 🛠 Tech Stack
-- **On-Chain Logic:** Poof Policy (Poof.new)
-- **Infrastructure:** Helius DAS API, Solana Mobile Stack (SMS)
-- **Frontend:** React, Vite, TypeScript, Tailwind CSS
-- **Mining Engine:** Web Crypto API (SubtleCrypto) using Web Workers
+## 🚀 Key Features
 
-## 👤 Solo-Developer Journey
-This project was built entirely by a solo developer with **autism**. My strength lies in extreme technical focus, which allowed me to architect and ship this protocol in a 7-day "tunnel" phase. PocketHash is the first time I have used AI-assisted development (**Claude**) to translate my deep research into market cycles and economic logic into a functional blockchain product.
+### 🌿 Energy-Efficient Mining (Adaptive Throttle)
+Unlike traditional miners, PocketHash uses an **Adaptive CPU Throttle** to protect mobile hardware:
+* **Eco Mode (~5% CPU):** Optimized for all-day background mining without overheating or battery drain.
+* **Turbo Mode (~8% CPU):** Balanced performance for faster hashing when plugged in.
 
-## 📄 License
-MIT
+### ⛓️ Dual Mining Paths
+* **SOLO MINE:** Convenience-focused. Uses backend-signing for seamless background accumulation (claims stored in a trustless PDA vault).
+* **DIRECT MINE:** 100% Trustless. Every block is signed and claimed directly on-chain via the Seed Vault.
+
+### 💎 Tokenomics ($PCKT)
+* **Max Supply:** 21,000,000 PCKT (Hard capped).
+* **Halving:** Every 210,000 blocks (Bitcoin-style scarcity).
+* **Target Block Time:** 10 minutes.
+* **Difficulty:** Bit-based adjustment every 30 blocks (1/8-bit precision).
+
+---
+
+## 🛠️ Technology Stack
+* **Blockchain:** Solana (Mainnet)
+* **Token Standard:** Token-2022 (PCKTPASS is a Soulbound NFT)
+* **Mining Engine:** Web Crypto API (SHA-256)
+* **Integrations:** Solana Mobile Stack (SMS), Seed Vault, Helius DAS API
+* **Security:** Program Derived Address (PDA) Vaults for trustless reward distribution.
+
+---
+
+## 🗺️ Roadmap Highlights
+- [x] Phase 1-3: Core Engine & Testnet Validation
+- [ ] **Phase 4: Mainnet Launch (Closed Beta for Seeker Owners)**
+- [ ] **Phase 5: TEEPIN Integration** – Moving to cryptographic hardware attestation for "Proof-of-Device."
+- [ ] **Phase 6: Hash-Streaming Launchpad** – Allowing other Solana projects to launch via mobile PoW.
+
+---
+
+## 🤝 Ecosystem Alignment ($SKR Utility)
+PocketHash creates a massive utility sink for the **$SKR** token. Every new miner pays an activation fee in $SKR, which is:
+1. Collected in the Treasury.
+2. Staked to secure the network.
+3. Redistributed as **Bonus Rewards** to active miners, creating a sustainable flywheel for the Seeker community.
+
+---
+
+## 📧 Contact & Community
+- **Twitter:** [@PocketHash](https://twitter.com)
